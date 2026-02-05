@@ -1,0 +1,12 @@
+version: "3.9"
+services:
+  unifi-backup:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      SECRET_KEY: "REPLACE_WITH_A_STRONG_SECRET_KEY"
+      CHROME_HEADLESS: "true"
+      APP_DATA_DIR: "/app/unifi_app"
+    volumes:
+      - ./unifi_app:/app/unifi_app

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Console History</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml" />
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1>Backup History</h1>
+      <p>Review every backup snapshot for this console.</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="section">
+      <div class="card">
+        {% if console %}
+          <h2>History for Console: {{ console.name }}</h2>
+          <p class="helper-text">Showing all backups. Times reflect <strong>{{ tz_label }}</strong>.</p>
+        {% else %}
+          <h2>Console not found</h2>
+        {% endif %}
+
+        {% if files_list %}
+          <div class="table-wrapper history-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date Folder</th>
+                  <th>File</th>
+                  <th>Backup Time</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in files_list %}
+                  <tr>
+                    <td>{{ item.date_display }}</td>
+                    <td>{{ item.filename }}</td>
+                    <td>{{ item.datetime_display }}</td>
+                    <td>
+                      <a class="button" href="{{ url_for('download_specific_backup', date_folder=item.date_folder, filename=item.filename) }}">Download</a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% if total_pages > 1 %}
+            <div class="pagination">
+              {% if page > 1 %}
+                <a class="button secondary" href="{{ url_for('console_history', cid=console.id, page=page-1) }}">Previous</a>
+              {% endif %}
+              <span class="pagination-info">Page {{ page }} of {{ total_pages }}</span>
+              {% if page < total_pages %}
+                <a class="button secondary" href="{{ url_for('console_history', cid=console.id, page=page+1) }}">Next</a>
+              {% endif %}
+            </div>
+          {% endif %}
+        {% else %}
+          <p>No backups found for this console.</p>
+        {% endif %}
+
+        <div class="history-footer">
+          <a class="button secondary" href="{{ back_link }}">Back to Dashboard</a>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

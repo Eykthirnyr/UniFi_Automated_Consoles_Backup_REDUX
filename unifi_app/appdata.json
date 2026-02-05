@@ -1,0 +1,29 @@
+{
+  "master_logged_in": false,
+  "last_cookie_check": null,
+  "consoles": [],
+  "logs": [],
+  "smtp": {
+    "enabled": false,
+    "host": "",
+    "port": 465,
+    "username": "",
+    "password": "",
+    "sender": "",
+    "recipients": "",
+    "use_ssl": true,
+    "notify_cookies_expired": true,
+    "notify_connectivity_failed": true,
+    "notify_backup_failed": true,
+    "notify_backup_success": false
+  },
+  "schedule": {
+    "backup_enabled": true,
+    "backup_value": 1,
+    "backup_unit": "days",
+    "check_enabled": true,
+    "check_value": 4,
+    "check_unit": "hours"
+  },
+  "tz_choice": "UTC"
+}
