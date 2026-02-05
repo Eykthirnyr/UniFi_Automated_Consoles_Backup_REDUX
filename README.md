@@ -125,7 +125,8 @@ https://unifi.ui.com/consoles/9C05D6[...]733/network/default/settings/system/bac
 
 ## GUI :
 
-![screencapture-192-168-2-204-55081-2026-02-04-11_29_03 (1)](https://github.com/user-attachments/assets/bb7ec7e8-6fc7-4881-922f-cd630d9e49db)
+![screencapture](https://github.com/user-attachments/assets/927ad023-6d8b-4926-95c1-6cfae2c453e1)
+
 
 ## Troubleshooting
 - **Chrome/Chromedriver errors**: Ensure Chromium is installed in Docker or Chrome is installed locally.
