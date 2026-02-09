@@ -6,6 +6,7 @@ import queue
 
 console_log_buffer = deque(maxlen=2000)
 
+MAX_QUEUE_SIZE = 10
 task_queue: queue.Queue = queue.Queue()
 current_task_status = {
     "running": False,
@@ -62,3 +63,15 @@ def purge_queued_tasks_with_prefix(prefix: str) -> int:
                 continue
             task_queue.queue.append(item)
     return removed
+
+
+def enqueue_task(
+    task_name: str,
+    func,
+    args: list | None = None,
+    kwargs: dict | None = None,
+) -> bool:
+    if task_queue.qsize() >= MAX_QUEUE_SIZE:
+        return False
+    task_queue.put((task_name, func, args or [], kwargs or {}))
+    return True

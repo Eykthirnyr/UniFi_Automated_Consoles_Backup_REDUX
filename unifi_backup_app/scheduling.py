@@ -2,39 +2,28 @@ from __future__ import annotations
 
 from .data import appdata, add_app_log
 from .scheduler import scheduler
-from .state import (
-    is_task_running,
-    current_task_status,
-    task_queue,
-    log_console,
-    current_task_has_prefix,
-    queue_has_task_prefix,
-)
-from .tasks import scheduled_backup_job_logic, scheduled_connectivity_check_logic
+from .state import log_console, enqueue_task, MAX_QUEUE_SIZE
+from .tasks import scheduled_backup_job_logic, test_cookie_access_logic
 
 
 def scheduled_connectivity_check_job() -> None:
     log_console("APScheduler => scheduled_connectivity_check_job triggered")
-    task_queue.put(("ConnectivityCheck", scheduled_connectivity_check_logic, [], {}))
+    if enqueue_task("CookieTest", test_cookie_access_logic):
+        add_app_log("Connectivity check queued.")
+    else:
+        add_app_log(
+            f"Connectivity check skipped: queue is full (max {MAX_QUEUE_SIZE} tasks)."
+        )
 
 
 def scheduled_backup_job() -> None:
     log_console("APScheduler => scheduled_backup_job triggered")
-
-    if current_task_has_prefix("ManualBackup-") or queue_has_task_prefix("ManualBackup-"):
-        add_app_log("Manual backups running/queued => skipping scheduled backup.")
-        return
-    if is_task_running() and current_task_status["step"].startswith("ScheduledBackup =>"):
-        add_app_log("Conflict: a scheduled backup is already running => skip new one.")
-        return
-    for item in list(task_queue.queue):
-        if item[0].startswith("ScheduledBackup =>"):
-            add_app_log("Conflict: a scheduled backup is queued => skip new one.")
-            return
-
-    task_queue.put(
-        ("ScheduledBackup => Pass1 => allConsoles", scheduled_backup_job_logic, [], {})
-    )
+    if enqueue_task("ScheduledBackup => Pass1 => allConsoles", scheduled_backup_job_logic):
+        add_app_log("Scheduled backup queued.")
+    else:
+        add_app_log(
+            f"Scheduled backup skipped: queue is full (max {MAX_QUEUE_SIZE} tasks)."
+        )
 
 
 def init_schedule_jobs() -> None:
