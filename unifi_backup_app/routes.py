@@ -31,10 +31,8 @@ from .settings import AVAILABLE_TIMEZONES, BACKUP_ROOT, DEFAULT_TZ
 from .state import (
     current_task_status,
     task_queue,
-    is_task_running,
-    current_task_has_prefix,
-    queue_has_task_prefix,
-    purge_queued_tasks_with_prefix,
+    enqueue_task,
+    MAX_QUEUE_SIZE,
 )
 from .tasks import (
     attempt_console_backup,
@@ -282,34 +280,35 @@ def register_routes(app) -> None:
 
     @app.route("/start_schedule_now", methods=["POST"])
     def start_schedule_now():
-        if current_task_has_prefix("ManualBackup-") or queue_has_task_prefix("ManualBackup-"):
+        if enqueue_task("ScheduledBackup => Pass1 => allConsoles", _start_backup):
+            flash("Scheduled backup queued (manual override).", "success")
+        else:
             flash(
-                "Manual backups are running/queued. Scheduled backups are paused until they finish.",
-                "warning",
+                f"Queue is full (max {MAX_QUEUE_SIZE} tasks). Please wait for tasks to finish.",
+                "danger",
             )
-            return redirect(url_for("dashboard"))
-        if is_task_running() and current_task_status["step"].startswith("ScheduledBackup =>"):
-            flash("Conflict: a scheduled backup is already running => skip new one.", "danger")
-            return redirect(url_for("dashboard"))
-        for item in list(task_queue.queue):
-            if item[0].startswith("ScheduledBackup =>"):
-                flash("Conflict: a scheduled backup is queued => skip new one.", "danger")
-                return redirect(url_for("dashboard"))
-
-        task_queue.put(("ScheduledBackup => Pass1 => allConsoles", _start_backup, [], {}))
-        flash("Scheduled backup started now (manual override).", "success")
         return redirect(url_for("dashboard"))
 
     @app.route("/test_cookies", methods=["POST"])
     def test_cookies():
-        task_queue.put(("CookieTest", test_cookie_access_logic, [], {}))
-        flash("Cookie test queued. Check logs for the result.", "info")
+        if enqueue_task("CookieTest", test_cookie_access_logic):
+            flash("Cookie test queued. Check logs for the result.", "info")
+        else:
+            flash(
+                f"Queue is full (max {MAX_QUEUE_SIZE} tasks). Please wait for tasks to finish.",
+                "danger",
+            )
         return redirect(url_for("dashboard"))
 
     @app.route("/reset_processes", methods=["POST"])
     def reset_processes():
-        task_queue.put(("ResetProcesses", reset_processes_logic, [], {}))
-        flash("Process reset queued. Check logs for cleanup status.", "info")
+        if enqueue_task("ResetProcesses", reset_processes_logic):
+            flash("Process reset queued. Check logs for cleanup status.", "info")
+        else:
+            flash(
+                f"Queue is full (max {MAX_QUEUE_SIZE} tasks). Please wait for tasks to finish.",
+                "danger",
+            )
         return redirect(url_for("dashboard"))
 
     @app.route("/add_console", methods=["POST"])
@@ -372,12 +371,13 @@ def register_routes(app) -> None:
             flash("Console not found.", "danger")
             return redirect(url_for("dashboard"))
 
-        removed = purge_queued_tasks_with_prefix("ScheduledBackup =>")
-        if removed:
-            flash("Paused queued scheduled backups to honor manual backup request.", "warning")
-
-        task_queue.put((f"ManualBackup-{console['name']}", attempt_console_backup, [console], {}))
-        flash(f"Backup for '{console['name']}' queued...", "info")
+        if enqueue_task(f"ManualBackup-{console['name']}", attempt_console_backup, [console]):
+            flash(f"Backup for '{console['name']}' queued...", "info")
+        else:
+            flash(
+                f"Queue is full (max {MAX_QUEUE_SIZE} tasks). Please wait for tasks to finish.",
+                "danger",
+            )
         return redirect(url_for("dashboard"))
 
     @app.route("/update_schedule", methods=["POST"])

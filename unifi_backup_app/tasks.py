@@ -232,39 +232,7 @@ def attempt_console_backup(console: dict) -> bool:
 
 def scheduled_connectivity_check_logic() -> None:
     log_console("scheduled_connectivity_check_logic => start")
-    if not appdata.get("master_logged_in", False):
-        add_app_log("Connectivity check => not logged in => skip.")
-        notify_connectivity_failed(
-            "ConnectivityCheck",
-            "https://unifi.ui.com/",
-            "Not logged in",
-        )
-        return
-
-    driver = get_selenium_driver()
-    try:
-        driver.get("https://unifi.ui.com/")
-        time.sleep(2)
-        load_cookies(driver)
-        time.sleep(2)
-
-        driver.get("https://unifi.ui.com/")
-        time.sleep(3)
-        curr_url = driver.current_url.lower()
-        if "/login" in curr_url or "/mfa" in curr_url:
-            add_app_log("Connectivity check => forced login => set not logged in.")
-            appdata["master_logged_in"] = False
-            save_appdata()
-            notify_cookies_expired("ConnectivityCheck", "https://unifi.ui.com/")
-            notify_connectivity_failed(
-                "ConnectivityCheck",
-                "https://unifi.ui.com/",
-                "Forced login required",
-            )
-        else:
-            add_app_log("Connectivity check => success => still logged in.")
-    finally:
-        driver.quit()
+    test_cookie_access_logic()
 
 
 def scheduled_backup_job_logic() -> None:
