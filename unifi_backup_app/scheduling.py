@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from .data import appdata, add_app_log
 from .scheduler import scheduler
-from .state import log_console, enqueue_task, MAX_QUEUE_SIZE
+from .state import (
+    log_console,
+    enqueue_task,
+    enqueue_task_unbounded,
+    MAX_QUEUE_SIZE,
+    SCHEDULED_BACKUP_TASK_PREFIX,
+    queue_has_task_prefix,
+    current_task_has_prefix,
+)
 from .tasks import scheduled_backup_job_logic, test_cookie_access_logic
 
 
@@ -18,12 +26,21 @@ def scheduled_connectivity_check_job() -> None:
 
 def scheduled_backup_job() -> None:
     log_console("APScheduler => scheduled_backup_job triggered")
-    if enqueue_task("ScheduledBackup => Pass1 => allConsoles", scheduled_backup_job_logic):
-        add_app_log("Scheduled backup queued.")
-    else:
-        add_app_log(
-            f"Scheduled backup skipped: queue is full (max {MAX_QUEUE_SIZE} tasks)."
+
+    if current_task_has_prefix(SCHEDULED_BACKUP_TASK_PREFIX) or queue_has_task_prefix(
+        SCHEDULED_BACKUP_TASK_PREFIX
+    ):
+        enqueue_task_unbounded(
+            "ScheduledBackup => Pass1 => allConsoles",
+            scheduled_backup_job_logic,
         )
+        add_app_log(
+            "Scheduled backup already running/queued. Added another scheduled backup to queue."
+        )
+        return
+
+    enqueue_task_unbounded("ScheduledBackup => Pass1 => allConsoles", scheduled_backup_job_logic)
+    add_app_log("Scheduled backup queued.")
 
 
 def init_schedule_jobs() -> None:
