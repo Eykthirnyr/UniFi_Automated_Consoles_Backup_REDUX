@@ -1,5 +1,4 @@
 let evtSource = null;
-let autoScheduleTriggered = false;
 
 function autoRemoveFlashMessages() {
   setTimeout(() => {
@@ -25,6 +24,8 @@ function updateUI(data) {
   const elapsedSeconds = data.current_task.elapsed_seconds;
   const queueSize = data.queue_size;
   const queueItems = data.queue_items || [];
+  const scheduledQueuePosition = data.scheduled_queue_position || 0;
+  const scheduledQueueSize = data.scheduled_queue_size || 0;
 
   const taskStatus = document.getElementById("task-status");
   const taskDetail = document.getElementById("task-detail");
@@ -50,9 +51,16 @@ function updateUI(data) {
     taskSubdetail.textContent = "";
   }
 
-  queueDetail.textContent = running
-    ? `Started: ${startTime || "Unknown"}`
-    : `Queue size: ${queueSize}`;
+  if (running) {
+    queueDetail.textContent = `Started: ${startTime || "Unknown"}`;
+  } else {
+    queueDetail.textContent = `Queue size: ${queueSize}`;
+  }
+
+  if (scheduledQueueSize > 0) {
+    const base = queueDetail.textContent;
+    queueDetail.textContent = `${base} | Scheduled queue: position ${scheduledQueuePosition}/${scheduledQueueSize}`;
+  }
   if (running && elapsedSeconds !== null && elapsedSeconds !== undefined) {
     taskTiming.textContent = `Elapsed: ${elapsedSeconds}s`;
   } else {
@@ -74,18 +82,6 @@ function updateUI(data) {
 
   const nextStr = data.next_backup_time_str || "N/A";
   document.getElementById("next-backup").textContent = nextStr;
-  const nextSecondsRaw = data.next_backup_time_seconds;
-  const nextSeconds = Number.isFinite(nextSecondsRaw)
-    ? nextSecondsRaw
-    : Number.parseInt(nextSecondsRaw, 10);
-  if (Number.isFinite(nextSeconds)) {
-    if (nextSeconds > 0) {
-      autoScheduleTriggered = false;
-    } else if (nextSeconds === 0 && !autoScheduleTriggered) {
-      autoScheduleTriggered = true;
-      runScheduledBackupNow();
-    }
-  }
   const currentTime = data.current_time_local || "";
   const currentTimeEl = document.getElementById("current-time");
   if (currentTimeEl) {
@@ -196,16 +192,6 @@ function updateUI(data) {
   }
 }
 
-function runScheduledBackupNow() {
-  fetch("/start_schedule_now", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-  }).catch(() => {
-    autoScheduleTriggered = false;
-  });
-}
 
 window.addEventListener("load", () => {
   initSSE();

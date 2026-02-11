@@ -8,6 +8,7 @@ console_log_buffer = deque(maxlen=2000)
 
 MAX_QUEUE_SIZE = 10
 task_queue: queue.Queue = queue.Queue()
+SCHEDULED_BACKUP_TASK_PREFIX = "ScheduledBackup"
 current_task_status = {
     "running": False,
     "task_name": "",
@@ -73,5 +74,15 @@ def enqueue_task(
 ) -> bool:
     if task_queue.qsize() >= MAX_QUEUE_SIZE:
         return False
+    task_queue.put((task_name, func, args or [], kwargs or {}))
+    return True
+
+
+def enqueue_task_unbounded(
+    task_name: str,
+    func,
+    args: list | None = None,
+    kwargs: dict | None = None,
+) -> bool:
     task_queue.put((task_name, func, args or [], kwargs or {}))
     return True

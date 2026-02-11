@@ -32,7 +32,11 @@ from .state import (
     current_task_status,
     task_queue,
     enqueue_task,
+    enqueue_task_unbounded,
     MAX_QUEUE_SIZE,
+    SCHEDULED_BACKUP_TASK_PREFIX,
+    queue_has_task_prefix,
+    current_task_has_prefix,
 )
 from .tasks import (
     attempt_console_backup,
@@ -117,7 +121,27 @@ def register_routes(app) -> None:
                         }
                     )
                 data["consoles"] = data_consoles
-                data["queue_items"] = [item[0] for item in list(task_queue.queue)]
+                queue_items = [item[0] for item in list(task_queue.queue)]
+                data["queue_items"] = queue_items
+
+                current_task_name = data["current_task"].get("task_name") or ""
+                scheduled_running = current_task_name.startswith(
+                    SCHEDULED_BACKUP_TASK_PREFIX
+                )
+                scheduled_positions = [
+                    idx + 1
+                    for idx, item in enumerate(queue_items)
+                    if item.startswith(SCHEDULED_BACKUP_TASK_PREFIX)
+                ]
+                if scheduled_running:
+                    data["scheduled_queue_position"] = 1
+                    data["scheduled_queue_size"] = 1 + len(scheduled_positions)
+                elif scheduled_positions:
+                    data["scheduled_queue_position"] = scheduled_positions[0]
+                    data["scheduled_queue_size"] = len(scheduled_positions)
+                else:
+                    data["scheduled_queue_position"] = 0
+                    data["scheduled_queue_size"] = 0
 
                 backup_job = scheduler.get_job("BackupJob")
                 next_backup_str = "N/A"
@@ -280,13 +304,19 @@ def register_routes(app) -> None:
 
     @app.route("/start_schedule_now", methods=["POST"])
     def start_schedule_now():
-        if enqueue_task("ScheduledBackup => Pass1 => allConsoles", _start_backup):
-            flash("Scheduled backup queued (manual override).", "success")
-        else:
+        already_running_or_queued = current_task_has_prefix(
+            SCHEDULED_BACKUP_TASK_PREFIX
+        ) or queue_has_task_prefix(SCHEDULED_BACKUP_TASK_PREFIX)
+
+        enqueue_task_unbounded("ScheduledBackup => Pass1 => allConsoles", _start_backup)
+
+        if already_running_or_queued:
             flash(
-                f"Queue is full (max {MAX_QUEUE_SIZE} tasks). Please wait for tasks to finish.",
-                "danger",
+                "A scheduled/override backup task is already running. This request was queued and will run next.",
+                "warning",
             )
+        else:
+            flash("Scheduled backup queued (manual override).", "success")
         return redirect(url_for("dashboard"))
 
     @app.route("/test_cookies", methods=["POST"])
