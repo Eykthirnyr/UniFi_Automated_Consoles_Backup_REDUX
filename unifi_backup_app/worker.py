@@ -11,8 +11,12 @@ _worker_thread: threading.Thread | None = None
 
 def _worker_loop() -> None:
     while True:
-        task_name, func, args, kwargs = task_queue.get()
-        start_task(task_name)
+        _, _, task_meta = task_queue.get()
+        task_name = task_meta["task_name"]
+        func = task_meta["func"]
+        args = task_meta["args"]
+        kwargs = task_meta["kwargs"]
+        start_task(task_meta)
         add_app_log(f"Worker: Starting task '{task_name}'")
         log_console(f"[Worker] Starting task '{task_name}'")
 

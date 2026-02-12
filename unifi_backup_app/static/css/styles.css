@@ -598,3 +598,21 @@ input[type="checkbox"] {
     flex-direction: column;
   }
 }
+
+
+.helper-text-small {
+  font-size: 0.78rem;
+  opacity: 0.9;
+}
+
+
+.history-table table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.history-table th,
+.history-table td {
+  padding-left: 22px;
+  padding-right: 22px;
+}
