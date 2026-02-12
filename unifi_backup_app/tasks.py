@@ -18,7 +18,13 @@ from .notifications import (
 )
 from .selenium_client import get_selenium_driver
 from .settings import BACKUP_ROOT, COOKIES_JSON, DOWNLOAD_DIR
-from .state import log_console, is_task_running, task_queue, current_task_status
+from .state import (
+    log_console,
+    is_task_running,
+    task_queue,
+    current_task_status,
+    update_current_task_progress,
+)
 
 
 def kill_leftover_chrome_processes() -> None:
@@ -240,66 +246,45 @@ def scheduled_backup_job_logic() -> None:
         add_app_log("Scheduled backup => canceled => not logged in.")
         return
 
-    add_app_log("Scheduled backup => pass#1 for all consoles.")
-    pass1_fail = []
     all_cons = [c for c in appdata["consoles"] if not c.get("exclude_from_schedule")]
     if not all_cons:
         add_app_log("Scheduled backup => no consoles eligible (all excluded).")
         return
-    for console in all_cons:
-        current_task_status["step"] = f"ScheduledBackup => Pass1 => {console['name']}"
-        ok = attempt_console_backup(console)
-        if not ok:
-            pass1_fail.append(console["id"])
 
-    if pass1_fail:
-        current_task_status["step"] = "ScheduledBackup => Wait10s => pass2"
-        time.sleep(10)
-        pass2_fail = []
-        for cid in pass1_fail:
-            console = next((x for x in all_cons if x["id"] == cid), None)
-            if not console:
-                continue
-            current_task_status["step"] = (
-                f"ScheduledBackup => Pass2 => {console['name']}"
+    add_app_log(f"Scheduled backup => running for {len(all_cons)} console(s).")
+    total_items = len(all_cons)
+    current_task_status["total_items"] = total_items
+
+    for idx, console in enumerate(all_cons, start=1):
+        success = False
+        for attempt in range(1, 4):
+            update_current_task_progress(
+                idx - 1,
+                f"ScheduledBackup => {console['name']} ({idx}/{total_items}) => attempt {attempt}/3",
             )
-            ok2 = attempt_console_backup(console)
-            if not ok2:
-                pass2_fail.append(console["id"])
-            else:
-                console["last_backup_status"] = "Success"
-                add_app_log(f"{console['name']} => pass2 => succeeded after retry")
-
-        if pass2_fail:
-            current_task_status["step"] = "ScheduledBackup => Wait10s => pass3"
-            time.sleep(10)
-            pass3_fail = []
-            for cid in pass2_fail:
-                console = next((x for x in all_cons if x["id"] == cid), None)
-                if not console:
-                    continue
+            success = attempt_console_backup(console)
+            if success:
+                if attempt > 1:
+                    add_app_log(
+                        f"{console['name']} => succeeded after retry (attempt {attempt}/3)."
+                    )
+                break
+            if attempt < 3:
                 current_task_status["step"] = (
-                    f"ScheduledBackup => Pass3 => {console['name']}"
+                    f"ScheduledBackup => waiting before retry for {console['name']}"
                 )
-                ok3 = attempt_console_backup(console)
-                if not ok3:
-                    pass3_fail.append(console["id"])
-                else:
-                    console["last_backup_status"] = "Success"
-                    add_app_log(f"{console['name']} => pass3 => succeeded after retry")
+                time.sleep(10)
 
-            if pass3_fail:
-                for cid in pass3_fail:
-                    console = next((x for x in all_cons if x["id"] == cid), None)
-                    if console:
-                        console["last_backup_status"] = "Failed after 3 retries"
-                        add_app_log(f"{console['name']} => failed after 3 tries.")
-        else:
-            log_console("No fails remain after pass2 => skipping pass3.")
-    else:
-        log_console("No fails => skipping pass2/pass3.")
+        if not success:
+            console["last_backup_status"] = "Failed after 3 retries"
+            add_app_log(f"{console['name']} => failed after 3 tries.")
 
-    add_app_log("Scheduled backup => complete => all passes done.")
+        update_current_task_progress(
+            idx,
+            f"ScheduledBackup => completed {idx}/{total_items} console(s)",
+        )
+
+    add_app_log("Scheduled backup => complete => all consoles processed.")
     current_task_status["step"] = "ScheduledBackup => Done"
     save_appdata()
 

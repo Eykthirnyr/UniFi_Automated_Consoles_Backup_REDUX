@@ -33,10 +33,11 @@ from .state import (
     task_queue,
     enqueue_task,
     enqueue_task_unbounded,
-    MAX_QUEUE_SIZE,
     SCHEDULED_BACKUP_TASK_PREFIX,
     queue_has_task_prefix,
     current_task_has_prefix,
+    get_queue_items,
+    get_queue_total_items,
 )
 from .tasks import (
     attempt_console_backup,
@@ -64,6 +65,7 @@ def register_routes(app) -> None:
                 data = {
                     "current_task": current_task_status.copy(),
                     "queue_size": task_queue.qsize(),
+                    "queue_total_items": get_queue_total_items(),
                     "master_logged_in": appdata.get("master_logged_in", False),
                 }
                 last_cookie_check = appdata.get("last_cookie_check")
@@ -121,8 +123,14 @@ def register_routes(app) -> None:
                         }
                     )
                 data["consoles"] = data_consoles
-                queue_items = [item[0] for item in list(task_queue.queue)]
+                data["total_consoles"] = len(data_consoles)
+                queue_items = get_queue_items()
                 data["queue_items"] = queue_items
+
+                running_total = int(data["current_task"].get("total_items") or 0)
+                running_done = int(data["current_task"].get("completed_items") or 0)
+                running_remaining = max(0, running_total - running_done) if data["current_task"].get("running") else 0
+                data["queue_remaining_items"] = running_remaining + int(data.get("queue_total_items", 0))
 
                 current_task_name = data["current_task"].get("task_name") or ""
                 scheduled_running = current_task_name.startswith(
@@ -308,7 +316,8 @@ def register_routes(app) -> None:
             SCHEDULED_BACKUP_TASK_PREFIX
         ) or queue_has_task_prefix(SCHEDULED_BACKUP_TASK_PREFIX)
 
-        enqueue_task_unbounded("ScheduledBackup => Pass1 => allConsoles", _start_backup)
+        total_items = len([c for c in appdata["consoles"] if not c.get("exclude_from_schedule")])
+        enqueue_task_unbounded("ScheduledBackup => Pass1 => allConsoles", _start_backup, total_items=total_items)
 
         if already_running_or_queued:
             flash(
@@ -321,24 +330,14 @@ def register_routes(app) -> None:
 
     @app.route("/test_cookies", methods=["POST"])
     def test_cookies():
-        if enqueue_task("CookieTest", test_cookie_access_logic):
-            flash("Cookie test queued. Check logs for the result.", "info")
-        else:
-            flash(
-                f"Queue is full (max {MAX_QUEUE_SIZE} tasks). Please wait for tasks to finish.",
-                "danger",
-            )
+        enqueue_task("CookieTest", test_cookie_access_logic)
+        flash("Cookie test queued. Check logs for the result.", "info")
         return redirect(url_for("dashboard"))
 
     @app.route("/reset_processes", methods=["POST"])
     def reset_processes():
-        if enqueue_task("ResetProcesses", reset_processes_logic):
-            flash("Process reset queued. Check logs for cleanup status.", "info")
-        else:
-            flash(
-                f"Queue is full (max {MAX_QUEUE_SIZE} tasks). Please wait for tasks to finish.",
-                "danger",
-            )
+        enqueue_task("ResetProcesses", reset_processes_logic)
+        flash("Process reset queued. Check logs for cleanup status.", "info")
         return redirect(url_for("dashboard"))
 
     @app.route("/add_console", methods=["POST"])
@@ -401,13 +400,8 @@ def register_routes(app) -> None:
             flash("Console not found.", "danger")
             return redirect(url_for("dashboard"))
 
-        if enqueue_task(f"ManualBackup-{console['name']}", attempt_console_backup, [console]):
-            flash(f"Backup for '{console['name']}' queued...", "info")
-        else:
-            flash(
-                f"Queue is full (max {MAX_QUEUE_SIZE} tasks). Please wait for tasks to finish.",
-                "danger",
-            )
+        enqueue_task(f"ManualBackup-{console['name']}", attempt_console_backup, [console])
+        flash(f"Backup for '{console['name']}' queued...", "info")
         return redirect(url_for("dashboard"))
 
     @app.route("/update_schedule", methods=["POST"])
@@ -422,12 +416,8 @@ def register_routes(app) -> None:
         schedule["check_value"] = int(request.form.get("check_value", "4"))
         schedule["check_unit"] = request.form.get("check_unit", "hours")
 
-        if schedule["backup_unit"] == "minutes" and schedule["backup_value"] < 15:
-            schedule["backup_value"] = 15
-            flash("Backup interval set to minimum of 15 minutes.", "warning")
-        if schedule["check_unit"] == "minutes" and schedule["check_value"] < 15:
-            schedule["check_value"] = 15
-            flash("Check interval set to minimum of 15 minutes.", "warning")
+        schedule["backup_value"] = max(1, schedule["backup_value"])
+        schedule["check_value"] = max(1, schedule["check_value"])
 
         tz_choice = request.form.get("tz_choice", DEFAULT_TZ)
         if tz_choice not in AVAILABLE_TIMEZONES:

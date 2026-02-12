@@ -24,6 +24,8 @@ function updateUI(data) {
   const elapsedSeconds = data.current_task.elapsed_seconds;
   const queueSize = data.queue_size;
   const queueItems = data.queue_items || [];
+  const queueTotalItems = data.queue_total_items || 0;
+  const queueRemainingItems = data.queue_remaining_items || 0;
   const scheduledQueuePosition = data.scheduled_queue_position || 0;
   const scheduledQueueSize = data.scheduled_queue_size || 0;
 
@@ -52,9 +54,9 @@ function updateUI(data) {
   }
 
   if (running) {
-    queueDetail.textContent = `Started: ${startTime || "Unknown"}`;
+    queueDetail.textContent = `Started: ${startTime || "Unknown"} | Remaining items: ${queueRemainingItems}`;
   } else {
-    queueDetail.textContent = `Queue size: ${queueSize}`;
+    queueDetail.textContent = `Queued tasks: ${queueSize} | Queued items: ${queueTotalItems}`;
   }
 
   if (scheduledQueueSize > 0) {
@@ -121,6 +123,11 @@ function updateUI(data) {
   }
 
   const consoles = data.consoles || [];
+  const totalConsolesEl = document.getElementById("total-consoles");
+  if (totalConsolesEl) {
+    const totalConsoles = data.total_consoles ?? consoles.length;
+    totalConsolesEl.textContent = `Total consoles: ${totalConsoles}`;
+  }
   const consolesKey = JSON.stringify(consoles);
   if (window.lastConsolesKey !== consolesKey) {
     window.lastConsolesKey = consolesKey;
