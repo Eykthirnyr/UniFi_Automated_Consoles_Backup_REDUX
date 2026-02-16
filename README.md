@@ -125,6 +125,7 @@ https://unifi.ui.com/consoles/9C05D6[...]733/network/default/settings/system/bac
 
 ## GUI :
 
+![screencapture](https://github.com/user-attachments/assets/e2b35fe0-9738-4c92-a2ad-358a7a003205)
 
 
 ## Troubleshooting
