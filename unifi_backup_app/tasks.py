@@ -27,6 +27,27 @@ from .state import (
 )
 
 
+def _open_driver_with_retries(max_attempts: int = 3, wait_seconds: int = 3):
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return get_selenium_driver()
+        except Exception as exc:
+            last_exc = exc
+            add_app_log(
+                f"Selenium startup failed (attempt {attempt}/{max_attempts}) => {exc}"
+            )
+            log_console(
+                f"Selenium startup failed (attempt {attempt}/{max_attempts}) => {exc}"
+            )
+            kill_leftover_chrome_processes()
+            if attempt < max_attempts:
+                time.sleep(wait_seconds)
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("Selenium startup failed without exception")
+
+
 def kill_leftover_chrome_processes() -> None:
     log_console("[Cleanup] Checking leftover Chrome/ChromeDriver processes...")
     for proc in psutil.process_iter(["pid", "name", "cmdline"]):
@@ -113,7 +134,7 @@ def load_cookies(driver) -> None:
 
 def manual_login_browser_logic() -> None:
     log_console("Starting manual_login_browser_logic() ...")
-    driver = get_selenium_driver()
+    driver = _open_driver_with_retries()
     try:
         driver.get("https://unifi.ui.com/")
         add_app_log("Opened unifi.ui.com for manual login (2 min).")
@@ -143,7 +164,7 @@ def manual_login_browser_logic() -> None:
 
 def attempt_console_backup(console: dict) -> bool:
     name = console["name"]
-    driver = get_selenium_driver()
+    driver = _open_driver_with_retries()
     try:
         driver.get("https://unifi.ui.com/")
         time.sleep(2)
@@ -291,7 +312,7 @@ def scheduled_backup_job_logic() -> None:
 
 def test_cookie_access_logic() -> None:
     log_console("Cookie test => start")
-    driver = get_selenium_driver()
+    driver = _open_driver_with_retries()
     try:
         driver.get("https://unifi.ui.com/")
         time.sleep(2)
