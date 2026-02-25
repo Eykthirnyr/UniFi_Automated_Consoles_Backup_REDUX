@@ -618,7 +618,7 @@ input[type="checkbox"] {
   padding-right: 22px;
 }
 
-/* Defensive: if an older spacer column sneaks back in due to merge/conflict, hide it. */
+/* Conflict-safe rule: keep a 4-column table; if a legacy spacer column appears from merges, hide it. */
 .history-table .history-spacer {
   display: none !important;
   width: 0 !important;
