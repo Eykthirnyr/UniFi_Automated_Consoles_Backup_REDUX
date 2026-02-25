@@ -616,3 +616,51 @@ input[type="checkbox"] {
   padding-left: 22px;
   padding-right: 22px;
 }
+
+
+
+
+.history-table table {
+  table-layout: fixed;
+}
+
+/* Keep regular 4-column layout and add readable "safe space" via padding + wrapping */
+.history-table th:nth-child(1),
+.history-table td:nth-child(1) {
+  width: 22%;
+}
+
+.history-table th:nth-child(2),
+.history-table td:nth-child(2) {
+  width: 34%;
+}
+
+.history-table th:nth-child(3),
+.history-table td:nth-child(3) {
+  width: 24%;
+}
+
+.history-table th:nth-child(4),
+.history-table td:nth-child(4) {
+  width: 20%;
+}
+
+.history-table td:nth-child(2),
+.history-table th:nth-child(2) {
+  padding-right: 40px;
+}
+
+.history-table td:nth-child(3),
+.history-table th:nth-child(3) {
+  padding-left: 28px;
+}
+
+.history-table td:nth-child(2) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+.history-table td:nth-child(3) {
+  white-space: nowrap;
+}
