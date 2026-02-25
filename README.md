@@ -109,14 +109,14 @@ docker compose up --build
 
 ## URLs
 
-Warning, urls format have recently changed, make sure you now use this format :
+WARNING, urls format have recently changed (02/2026), make sure you now use this format :
 
 ```bash
 https://unifi.ui.com/consoles/F4[...]5/network/default/settings/control-plane/backups
 ```
 Following this change, this app now does a full backup of the console and no longer just the network side.
 
-Old urls format :
+Old urls format (no longer supported) :
 
 ```bash
 https://unifi.ui.com/consoles/9C05D6[...]733/network/default/settings/system/backups
