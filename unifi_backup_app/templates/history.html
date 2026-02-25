@@ -35,6 +35,7 @@
                 <tr>
                   <th>Date Folder</th>
                   <th>File</th>
+                  <th class="history-spacer" aria-hidden="true"></th>
                   <th>Backup Time</th>
                   <th>Action</th>
                 </tr>
@@ -44,6 +45,7 @@
                   <tr>
                     <td>{{ item.date_display }}</td>
                     <td>{{ item.filename }}</td>
+                    <td class="history-spacer" aria-hidden="true"></td>
                     <td>{{ item.datetime_display }}</td>
                     <td>
                       <a class="button" href="{{ url_for('download_specific_backup', date_folder=item.date_folder, filename=item.filename) }}">Download</a>
