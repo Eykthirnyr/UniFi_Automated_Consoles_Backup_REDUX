@@ -616,3 +616,14 @@ input[type="checkbox"] {
   padding-left: 22px;
   padding-right: 22px;
 }
+
+
+.history-table th.history-spacer,
+.history-table td.history-spacer {
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+  padding: 0;
+  border-bottom: none;
+  background: transparent;
+}

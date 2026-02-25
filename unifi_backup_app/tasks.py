@@ -6,6 +6,7 @@ import time
 
 import psutil
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -191,28 +192,43 @@ def attempt_console_backup(console: dict) -> bool:
             kill_leftover_chrome_processes()
             return False
 
-        main_btn = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, "//button[@name='backupDownload']"))
-        )
-        main_btn.click()
-        time.sleep(3)
+        def click_button_by_text(
+            label: str,
+            timeout: int = 30,
+            extra_condition: str = "",
+        ) -> None:
+            text_xpath = f".//span[contains(@class, 'content') and normalize-space()='{label}']"
+            xpath = f"//button[{text_xpath}"
+            if extra_condition:
+                xpath += f" and {extra_condition}"
+            xpath += "]"
 
-        second_btn = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable(
-                (
-                    By.XPATH,
-                    "//button[@name='backupDownload' and contains(@class, 'css-network-qhqpn7')]",
-                )
+            button = WebDriverWait(driver, timeout).until(
+                EC.element_to_be_clickable((By.XPATH, xpath))
             )
-        )
-        second_btn.click()
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
+            try:
+                button.click()
+            except Exception:
+                ActionChains(driver).move_to_element(button).pause(0.2).click().perform()
+
+        # Step 1: create a fresh backup first.
+        click_button_by_text("Back Up Now", timeout=45)
+        time.sleep(30)
+
+        # Step 2: click the inline download button in the backup row.
+        click_button_by_text("Download", timeout=45)
+        time.sleep(2)
+
+        # Step 3: click the primary confirm modal/button that appears dynamically.
+        click_button_by_text("Download", timeout=45, extra_condition="contains(@class, 'primary')")
 
         found_file = None
         for _ in range(60):
             possible = [
                 f
                 for f in os.listdir(DOWNLOAD_DIR)
-                if (f.endswith(".unf") or f.endswith(".tar.gz"))
+                if (f.endswith(".unf") or f.endswith(".tar.gz") or f.endswith(".unifi"))
                 and not f.endswith(".crdownload")
             ]
             if possible:
@@ -225,7 +241,7 @@ def attempt_console_backup(console: dict) -> bool:
 
         if not found_file:
             console["last_backup_status"] = "Failed"
-            add_app_log(f"Backup => '{name}' => no .unf/.tar.gz => fail.")
+            add_app_log(f"Backup => '{name}' => no .unf/.tar.gz/.unifi => fail.")
             notify_backup_failed(name, console["backup_url"], "No backup file after 60s")
             return False
 
