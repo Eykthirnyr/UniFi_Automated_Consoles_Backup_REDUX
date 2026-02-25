@@ -109,7 +109,12 @@ docker compose up --build
 
 ## URLs
 
-Make sure to use consoles urls formated as such :
+Warning, urls format have recently changed, make sure you now use this format :
+
+```bash
+https://unifi.ui.com/consoles/F4[...]5/network/default/settings/control-plane/backups
+```
+Old urls format :
 
 ```bash
 https://unifi.ui.com/consoles/9C05D6[...]733/network/default/settings/system/backups
