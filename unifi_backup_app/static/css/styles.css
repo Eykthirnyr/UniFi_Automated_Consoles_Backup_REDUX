@@ -609,6 +609,7 @@ input[type="checkbox"] {
 .history-table table {
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
 }
 
 .history-table th,
@@ -617,13 +618,40 @@ input[type="checkbox"] {
   padding-right: 22px;
 }
 
-
-.history-table th.history-spacer,
-.history-table td.history-spacer {
-  width: 40px;
-  min-width: 40px;
-  max-width: 40px;
-  padding: 0;
-  border-bottom: none;
-  background: transparent;
+/* Conflict-safe rule: keep a 4-column table; if a legacy spacer column appears from merges, hide it. */
+.history-table .history-spacer {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
 }
+
+/* Keep regular 4-column layout and add a readable safe gap via padding + wrapping. */
+.history-table th:nth-child(1),
+.history-table td:nth-child(1) {
+  width: 22%;
+}
+
+.history-table th:nth-child(2),
+.history-table td:nth-child(2) {
+  width: 34%;
+  padding-right: 40px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+.history-table th:nth-child(3),
+.history-table td:nth-child(3) {
+  width: 24%;
+  padding-left: 28px;
+  white-space: nowrap;
+}
+
+.history-table th:nth-child(4),
+.history-table td:nth-child(4) {
+  width: 20%;
+}
+
