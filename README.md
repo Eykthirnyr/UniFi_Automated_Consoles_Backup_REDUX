@@ -114,6 +114,8 @@ Warning, urls format have recently changed, make sure you now use this format :
 ```bash
 https://unifi.ui.com/consoles/F4[...]5/network/default/settings/control-plane/backups
 ```
+Following this change, this app now does a full backup of the console and no longer just the network side.
+
 Old urls format :
 
 ```bash
