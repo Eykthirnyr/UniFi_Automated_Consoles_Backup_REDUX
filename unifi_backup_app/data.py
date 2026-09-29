@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import threading
 from datetime import datetime, timezone, timedelta, tzinfo
 from zoneinfo import ZoneInfo
 
 from .settings import APPDATA_JSON, DEFAULT_TZ, AVAILABLE_TIMEZONES
 
 appdata: dict = {}
+
+# Flask request threads, the scheduler and the worker all save appdata.
+_appdata_lock = threading.RLock()
 
 
 def _parse_fixed_offset(tz_name: str) -> tzinfo | None:
@@ -137,13 +142,27 @@ def _normalize_appdata(data: dict) -> dict:
 
 
 def save_appdata() -> None:
-    with APPDATA_JSON.open("w", encoding="utf-8") as handle:
-        json.dump(appdata, handle, indent=2)
+    with _appdata_lock:
+        for attempt in range(3):
+            try:
+                payload = json.dumps(appdata, indent=2)
+                break
+            except RuntimeError:
+                # Another thread resized a dict while it was being serialized; retry.
+                if attempt == 2:
+                    raise
+        # Write then rename, so a crash or a concurrent save never leaves a truncated file.
+        tmp_path = APPDATA_JSON.with_name(APPDATA_JSON.name + ".tmp")
+        with tmp_path.open("w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, APPDATA_JSON)
 
 
 def add_app_log(message: str) -> None:
     now_utc_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     entry = {"timestamp": now_utc_str, "message": message}
-    appdata["logs"].append(entry)
-    appdata["logs"] = appdata["logs"][-300:]
-    save_appdata()
+    with _appdata_lock:
+        appdata["logs"] = (appdata["logs"] + [entry])[-300:]
+        save_appdata()

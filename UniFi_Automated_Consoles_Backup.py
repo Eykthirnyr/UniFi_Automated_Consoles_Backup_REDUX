@@ -5,9 +5,7 @@ import subprocess
 REQUIRED_PACKAGES = [
     "flask",
     "flask_apscheduler",
-    "requests",
     "selenium",
-    "webdriver_manager",
     "psutil",
 ]
 

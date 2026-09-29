@@ -63,6 +63,11 @@ function updateUI(data) {
     const base = queueDetail.textContent;
     queueDetail.textContent = `${base} | Scheduled queue: position ${scheduledQueuePosition}/${scheduledQueueSize}`;
   }
+  const busy = Boolean(running) || queueSize > 0;
+  const cancelAllButton = document.getElementById("cancel-all-button");
+  if (cancelAllButton) {
+    cancelAllButton.disabled = !busy;
+  }
   if (running && elapsedSeconds !== null && elapsedSeconds !== undefined) {
     taskTiming.textContent = `Elapsed: ${elapsedSeconds}s`;
   } else {
@@ -181,7 +186,7 @@ function updateUI(data) {
             <button type="submit">Backup Now</button>
           </form>
           <form method="POST" action="/remove_console/${c.id}">
-            <button type="submit" class="secondary">Remove</button>
+            <button type="submit" class="secondary console-edit-button">Remove</button>
           </form>
           <form method="GET" action="/download_latest_backup/${c.id}">
             <button type="submit" class="secondary">Download Latest</button>
@@ -197,11 +202,94 @@ function updateUI(data) {
       });
     }
   }
+  applyConsoleEditLock(busy);
+}
+
+// The server refuses console edits while a task runs; mirror it in the UI.
+function applyConsoleEditLock(busy) {
+  document.querySelectorAll(".console-edit-button").forEach((button) => {
+    button.disabled = busy;
+    button.title = busy ? "Disabled while a task is running or queued." : "";
+  });
+  document.querySelectorAll(".console-lock-hint").forEach((hint) => {
+    hint.hidden = !busy;
+  });
+}
+
+function formatBytes(bytes) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function initPurge() {
+  const openButton = document.getElementById("purge-open");
+  const panel = document.getElementById("purge-confirm");
+  const summary = document.getElementById("purge-summary");
+  const form = document.getElementById("purge-form");
+  const input = document.getElementById("purge-confirm-input");
+  const submit = document.getElementById("purge-submit");
+  const cancel = document.getElementById("purge-cancel");
+  if (!openButton || !panel) return;
+  const expected = input.dataset.expected;
+  const labels = { backups: "Backups", downloads: "Temporary downloads", chrome: "Chrome profiles / temp folders" };
+
+  const closePanel = () => {
+    panel.hidden = true;
+    openButton.disabled = false;
+    input.value = "";
+    submit.disabled = true;
+  };
+
+  const addLine = (text) => {
+    const li = document.createElement("li");
+    li.textContent = text;
+    summary.appendChild(li);
+  };
+
+  // Step 1: show exactly what would be deleted before asking for the typed confirmation.
+  openButton.addEventListener("click", async () => {
+    openButton.disabled = true;
+    panel.hidden = false;
+    form.hidden = true;
+    summary.innerHTML = "";
+    addLine("Scanning files…");
+    try {
+      const response = await fetch("/purge_preview");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      summary.innerHTML = "";
+      if (!data.total_files) {
+        addLine(`Nothing to purge: no file is older than ${data.max_age_days} days.`);
+        return;
+      }
+      Object.entries(data.categories).forEach(([key, info]) => {
+        addLine(`${labels[key] || key}: ${info.files} file(s), ${formatBytes(info.bytes)}`);
+      });
+      addLine(`Total: ${data.total_files} file(s), ${formatBytes(data.total_bytes)}`);
+      form.hidden = false;
+      input.focus();
+    } catch (err) {
+      summary.innerHTML = "";
+      addLine(`Could not list the files to purge (${err.message}).`);
+    }
+  });
+
+  input.addEventListener("input", () => {
+    submit.disabled = input.value.trim() !== expected;
+  });
+  cancel.addEventListener("click", closePanel);
 }
 
 
 window.addEventListener("load", () => {
   initSSE();
+  initPurge();
   autoRemoveFlashMessages();
   const backToTop = document.getElementById("back-to-top");
   if (backToTop) {

@@ -5,6 +5,7 @@ import smtplib
 from email.message import EmailMessage
 
 from .data import appdata, get_user_timezone, get_user_timezone_label
+from .state import log_console
 
 
 def _smtp_config() -> dict:
@@ -82,6 +83,14 @@ def send_test_email() -> tuple[bool, str]:
     return True, "SMTP test email sent successfully."
 
 
+def _send_safely(subject: str, body: str) -> None:
+    # A broken SMTP server must never abort or fail a backup run.
+    try:
+        send_notification(subject, body)
+    except Exception as exc:
+        log_console(f"[SMTP] Notification '{subject}' not sent => {exc}")
+
+
 def notify_cookies_expired(console_name: str, url: str) -> None:
     if not appdata.get("smtp", {}).get("notify_cookies_expired", False):
         return
@@ -93,7 +102,7 @@ def notify_cookies_expired(console_name: str, url: str) -> None:
         f"Detected: {now}\n"
         "Action: Upload fresh cookies or re-login to renew the session."
     )
-    send_notification(subject, body)
+    _send_safely(subject, body)
 
 
 def notify_connectivity_failed(console_name: str, url: str, error: str) -> None:
@@ -107,7 +116,7 @@ def notify_connectivity_failed(console_name: str, url: str, error: str) -> None:
         f"Error: {error}\n"
         f"Time: {now}\n"
     )
-    send_notification(subject, body)
+    _send_safely(subject, body)
 
 
 def notify_backup_failed(console_name: str, url: str, error: str) -> None:
@@ -121,7 +130,7 @@ def notify_backup_failed(console_name: str, url: str, error: str) -> None:
         f"Error: {error}\n"
         f"Time: {now}\n"
     )
-    send_notification(subject, body)
+    _send_safely(subject, body)
 
 
 def notify_backup_success(console_name: str, url: str, filename: str) -> None:
@@ -135,4 +144,4 @@ def notify_backup_success(console_name: str, url: str, filename: str) -> None:
         f"File: {filename}\n"
         f"Time: {now}\n"
     )
-    send_notification(subject, body)
+    _send_safely(subject, body)

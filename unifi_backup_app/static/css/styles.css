@@ -198,6 +198,58 @@ button.secondary:hover,
   background: #334155;
 }
 
+button.danger {
+  background: rgba(239, 68, 68, 0.85);
+  box-shadow: 0 18px 30px rgba(239, 68, 68, 0.25);
+}
+
+button.danger:hover {
+  background: #dc2626;
+}
+
+button:disabled,
+button:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+button.danger:disabled:hover {
+  background: rgba(239, 68, 68, 0.85);
+}
+
+button.secondary:disabled:hover {
+  background: rgba(30, 41, 59, 0.9);
+}
+
+button:not(.secondary):not(.danger):disabled:hover {
+  background: var(--primary);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.purge-confirm {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.purge-confirm .purge-title {
+  margin-top: 0;
+  color: #fecaca;
+  font-weight: 600;
+}
+
+.purge-confirm label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+}
+
 .section {
   display: grid;
   gap: 16px;

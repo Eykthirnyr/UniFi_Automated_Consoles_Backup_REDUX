@@ -7,6 +7,10 @@ A modernized Flask dashboard for managing UniFi console backups with scheduling,
 - Automated scheduled backups and connectivity checks.
 - Manual backup triggers, download of latest backups, and 30-day history view.
 - Docker-friendly structure with persistent storage.
+- **Cancel All Tasks** button: empties the queue and stops the running task (its Chrome session is killed).
+- Consoles cannot be added, imported or removed while a task is running or queued.
+- **Maintenance** purge: deletes backups, leftover Chrome profiles and temporary downloads older than 90 days,
+  after a preview of what will be deleted and a typed `PURGE` confirmation. Settings, consoles and cookies are kept.
 
 ## Project Layout
 ```
@@ -116,6 +120,9 @@ https://unifi.ui.com/consoles/F4[...]5/network/default/settings/control-plane/ba
 ```
 Following this change, this app now does a full backup of the console and no longer just the network side.
 
+Backup page flow (09/2026): the app clicks **Download Backup**, then the primary **Download** button of the dialog,
+and waits for the console to prepare the archive (the browser download can take ~45 s to start).
+
 Old urls format (no longer supported) :
 
 ```bash
@@ -127,7 +134,7 @@ https://unifi.ui.com/consoles/9C05D6[...]733/network/default/settings/system/bac
 - `APP_DATA_DIR`: Data directory for logs, cookies, backups. Defaults to `./unifi_app`.
 - `CHROME_HEADLESS`: `true`/`false` to run headless browser.
 - `CHROME_BINARY`: Path to Chromium/Chrome binary (optional).
-- `CHROMEDRIVER_PATH`: Path to chromedriver (Docker uses `/usr/bin/chromedriver`).
+- `CHROMEDRIVER_PATH`: Path to chromedriver (Docker uses `/usr/bin/chromedriver`). When unset, Selenium Manager downloads the matching driver.
 - `DEFAULT_TZ`: Default time zone used on first run. The dashboard now lists all available time zones.
 
 ## GUI :
@@ -138,3 +145,13 @@ https://unifi.ui.com/consoles/9C05D6[...]733/network/default/settings/system/bac
 ## Troubleshooting
 - **Chrome/Chromedriver errors**: Ensure Chromium is installed in Docker or Chrome is installed locally.
 - **Login expires**: Upload fresh cookies or re-run manual login locally to refresh.
+- **After updating the code, rebuild the image** (`docker compose up -d --build`, or `docker build` then recreate the container):
+  a plain `docker restart` keeps running the old image.
+- **Backups failing after several days of uptime** (fixed 09/2026): the Flask debug reloader was running a second copy
+  of the scheduler/worker, failed sessions could leave Chrome processes and profiles behind, and Chrome zombie processes
+  were never reaped. The image now runs under `tini`, each Chrome session uses its own profile and download folder,
+  and everything belonging to a session is cleaned up when it ends.
+- **`/tmp` of an old container full of `org.chromium.Chromium.scoped_dir.*` folders** (~175 MB each): these are the
+  Chrome profiles the previous version never deleted. They live in the container's writable layer, not in the volume:
+  recreating the container frees them, and the app now also deletes them at startup. Profiles are now ~2 MB
+  (browser caches and Chrome's ML model downloads are disabled) and only exist while a session runs.

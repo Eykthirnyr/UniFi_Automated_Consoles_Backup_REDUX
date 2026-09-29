@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
+import functools
 import io
 import json
 import os
+import re
+import time
 import zipfile
 
 from flask import (
     Response,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -25,7 +29,7 @@ from .data import (
     save_appdata,
 )
 from .notifications import send_test_email
-from .scheduling import init_schedule_jobs
+from .scheduling import INTERVAL_UNITS, init_schedule_jobs
 from .scheduler import scheduler
 from .settings import AVAILABLE_TIMEZONES, BACKUP_ROOT, DEFAULT_TZ
 from .state import (
@@ -38,14 +42,42 @@ from .state import (
     current_task_has_prefix,
     get_queue_items,
     get_queue_total_items,
+    hold_worker_if_idle,
 )
 from .tasks import (
-    attempt_console_backup,
+    PURGE_MAX_AGE_DAYS,
+    PURGE_TASK_NAME,
+    cancel_all_tasks_logic,
+    console_file_prefix,
+    manual_backup_logic,
+    purge_old_files_logic,
+    purge_preview,
     remove_old_cookie,
     reset_processes_logic,
     store_cookies_json,
     test_cookie_access_logic,
 )
+
+
+CONSOLE_EDIT_BUSY_MESSAGE = (
+    "A task is running or queued: consoles cannot be added, imported or removed until "
+    "it finishes (or use Cancel All Tasks)."
+)
+PURGE_CONFIRMATION_WORD = "PURGE"
+
+
+def _requires_idle_worker(view):
+    """Refuse the request while a task runs or waits; no task can start during it."""
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        with hold_worker_if_idle() as idle:
+            if not idle:
+                flash(CONSOLE_EDIT_BUSY_MESSAGE, "warning")
+                return redirect(url_for("dashboard"))
+            return view(*args, **kwargs)
+
+    return wrapper
 
 
 def register_routes(app) -> None:
@@ -56,6 +88,8 @@ def register_routes(app) -> None:
             appdata=appdata,
             available_tzs=AVAILABLE_TIMEZONES,
             tz_label=get_user_timezone_label(),
+            purge_max_age_days=PURGE_MAX_AGE_DAYS,
+            purge_confirmation_word=PURGE_CONFIRMATION_WORD,
         )
 
     @app.route("/status_stream")
@@ -108,8 +142,8 @@ def register_routes(app) -> None:
                         status_display = "Success"
                     elif "Failed after 3" in status_raw:
                         status_display = "Failed after 3 retries"
-                    elif status_raw:
-                        status_display = "Failed"
+                    elif not status_raw or status_raw == "Unknown":
+                        status_display = "Unknown"
                     else:
                         status_display = "Failed"
                     data_consoles.append(
@@ -170,8 +204,6 @@ def register_routes(app) -> None:
                 )
 
                 yield "event: message\n" + "data: " + json.dumps(data) + "\n\n"
-                import time
-
                 time.sleep(1)
 
         return Response(event_stream(), mimetype="text/event-stream")
@@ -207,6 +239,7 @@ def register_routes(app) -> None:
         return redirect(url_for("dashboard"))
 
     @app.route("/import_consoles", methods=["POST"])
+    @_requires_idle_worker
     def import_consoles():
         consoles_file = request.files.get("consoles_file")
         if not consoles_file:
@@ -241,9 +274,13 @@ def register_routes(app) -> None:
             backup_url = str(console.get("backup_url", "")).strip()
             if not name or not backup_url:
                 continue
+            try:
+                console_id = int(console.get("id", 0) or 0)
+            except (TypeError, ValueError):
+                console_id = 0
             sanitized.append(
                 {
-                    "id": int(console.get("id", 0)) or 0,
+                    "id": console_id,
                     "name": name,
                     "backup_url": backup_url,
                     "last_backup_status": console.get("last_backup_status", "Unknown"),
@@ -268,10 +305,12 @@ def register_routes(app) -> None:
             appdata["consoles"] = list(existing_by_name.values())
 
         max_id = max((c["id"] for c in appdata["consoles"]), default=0)
+        used_ids = set()
         for console in appdata["consoles"]:
-            if not console["id"]:
+            if not console["id"] or console["id"] in used_ids:
                 max_id += 1
                 console["id"] = max_id
+            used_ids.add(console["id"])
 
         if master_logged_in is not None:
             appdata["master_logged_in"] = bool(master_logged_in)
@@ -334,6 +373,39 @@ def register_routes(app) -> None:
         flash("Cookie test queued. Check logs for the result.", "info")
         return redirect(url_for("dashboard"))
 
+    @app.route("/cancel_all_tasks", methods=["POST"])
+    def cancel_all_tasks_route():
+        dropped, was_running = cancel_all_tasks_logic()
+        if not dropped and not was_running:
+            flash("No task was running or queued.", "info")
+        else:
+            flash(
+                f"Cancelled: {dropped} queued task(s) removed"
+                + (" and the running task is stopping." if was_running else "."),
+                "warning",
+            )
+        return redirect(url_for("dashboard"))
+
+    @app.route("/purge_preview")
+    def purge_preview_route():
+        return jsonify(purge_preview())
+
+    @app.route("/purge_old_files", methods=["POST"])
+    def purge_old_files():
+        # Second confirmation: the word has to be typed, a stray POST purges nothing.
+        if request.form.get("confirmation", "").strip() != PURGE_CONFIRMATION_WORD:
+            flash(f"Purge not started: type {PURGE_CONFIRMATION_WORD} to confirm.", "danger")
+            return redirect(url_for("dashboard"))
+        if current_task_has_prefix(PURGE_TASK_NAME) or queue_has_task_prefix(PURGE_TASK_NAME):
+            flash("A purge is already running or queued.", "info")
+            return redirect(url_for("dashboard"))
+        enqueue_task(PURGE_TASK_NAME, purge_old_files_logic)
+        flash(
+            f"Purge of files older than {PURGE_MAX_AGE_DAYS} days queued. The result will appear in the logs.",
+            "success",
+        )
+        return redirect(url_for("dashboard"))
+
     @app.route("/reset_processes", methods=["POST"])
     def reset_processes():
         enqueue_task("ResetProcesses", reset_processes_logic)
@@ -341,6 +413,7 @@ def register_routes(app) -> None:
         return redirect(url_for("dashboard"))
 
     @app.route("/add_console", methods=["POST"])
+    @_requires_idle_worker
     def add_console():
         name = request.form.get("name", "").strip()
         curl = request.form.get("backup_url", "").strip()
@@ -363,6 +436,7 @@ def register_routes(app) -> None:
         return redirect(url_for("dashboard"))
 
     @app.route("/remove_console/<int:cid>", methods=["POST"])
+    @_requires_idle_worker
     def remove_console(cid):
         found = False
         for console in appdata["consoles"]:
@@ -400,7 +474,7 @@ def register_routes(app) -> None:
             flash("Console not found.", "danger")
             return redirect(url_for("dashboard"))
 
-        enqueue_task(f"ManualBackup-{console['name']}", attempt_console_backup, [console])
+        enqueue_task(f"ManualBackup-{console['name']}", manual_backup_logic, [console["id"]])
         flash(f"Backup for '{console['name']}' queued...", "info")
         return redirect(url_for("dashboard"))
 
@@ -408,16 +482,25 @@ def register_routes(app) -> None:
     def update_schedule():
         schedule = appdata["schedule"]
 
+        try:
+            backup_value = max(1, int(request.form.get("backup_value", "1")))
+            check_value = max(1, int(request.form.get("check_value", "4")))
+        except ValueError:
+            flash("Schedule values must be whole numbers.", "danger")
+            return redirect(url_for("dashboard"))
+        backup_unit = request.form.get("backup_unit", "days")
+        check_unit = request.form.get("check_unit", "hours")
+        if backup_unit not in INTERVAL_UNITS or check_unit not in INTERVAL_UNITS:
+            flash("Invalid schedule unit.", "danger")
+            return redirect(url_for("dashboard"))
+
         schedule["backup_enabled"] = "backup_enabled" in request.form
-        schedule["backup_value"] = int(request.form.get("backup_value", "1"))
-        schedule["backup_unit"] = request.form.get("backup_unit", "days")
+        schedule["backup_value"] = backup_value
+        schedule["backup_unit"] = backup_unit
 
         schedule["check_enabled"] = "check_enabled" in request.form
-        schedule["check_value"] = int(request.form.get("check_value", "4"))
-        schedule["check_unit"] = request.form.get("check_unit", "hours")
-
-        schedule["backup_value"] = max(1, schedule["backup_value"])
-        schedule["check_value"] = max(1, schedule["check_value"])
+        schedule["check_value"] = check_value
+        schedule["check_unit"] = check_unit
 
         tz_choice = request.form.get("tz_choice", DEFAULT_TZ)
         if tz_choice not in AVAILABLE_TIMEZONES:
@@ -446,7 +529,8 @@ def register_routes(app) -> None:
             flash("No matching backup folder found.", "danger")
             return redirect(url_for("dashboard"))
 
-        files = [f for f in os.listdir(folder_path) if f.startswith(console["name"] + "_")]
+        prefix = console_file_prefix(console["name"])
+        files = [f for f in os.listdir(folder_path) if f.startswith(prefix)]
         if not files:
             flash("No matching backup file found for that console's last backup time.", "danger")
             return redirect(url_for("dashboard"))
@@ -501,7 +585,7 @@ def register_routes(app) -> None:
                 total_pages=1,
             )
 
-        console_name = console["name"]
+        file_prefix = console_file_prefix(console["name"])
         user_tz = get_user_timezone()
         page = max(int(request.args.get("page", "1") or "1"), 1)
         page_size = 100
@@ -512,7 +596,7 @@ def register_routes(app) -> None:
             if not folder_path.is_dir():
                 continue
             for fname in os.listdir(folder_path):
-                if fname.startswith(console_name + "_"):
+                if fname.startswith(file_prefix):
                     fpath = folder_path / fname
                     if fpath.is_file():
                         mtime = os.path.getmtime(fpath)
@@ -586,6 +670,8 @@ def register_routes(app) -> None:
 
     @app.route("/download_backup/<date_folder>/<path:filename>")
     def download_specific_backup(date_folder, filename):
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_folder):
+            return "Not found", 404
         folder_path = BACKUP_ROOT / date_folder
         return send_from_directory(str(folder_path), filename, as_attachment=True)
 

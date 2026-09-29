@@ -41,6 +41,10 @@
         <p id="task-timing" class="helper-text"></p>
         <p id="queue-detail">Queue size: 0</p>
         <ul id="queue-list" class="queue-list"></ul>
+        <form method="POST" action="{{ url_for('cancel_all_tasks_route') }}"
+              onsubmit="return confirm('Stop the running task and remove every queued task?');">
+          <button type="submit" id="cancel-all-button" class="danger" disabled>Cancel All Tasks</button>
+        </form>
       </div>
       <div class="card">
         <h2>Next Backup</h2>
@@ -116,8 +120,9 @@
             </div>
           </div>
           <div style="margin-top: 16px;">
-            <button type="submit">Add Console</button>
+            <button type="submit" class="console-edit-button">Add Console</button>
           </div>
+          <p class="helper-text console-lock-hint" hidden>A task is running or queued: adding, importing and removing consoles is disabled until it finishes.</p>
         </form>
       </div>
     </section>
@@ -208,13 +213,38 @@
         <form method="POST" action="{{ url_for('import_consoles') }}" enctype="multipart/form-data">
           <div class="upload-row">
             <input type="file" name="consoles_file" accept="application/json" required />
-            <button type="submit">Import Consoles</button>
+            <button type="submit" class="console-edit-button">Import Consoles</button>
           </div>
           <label class="checkbox-row" style="margin-top: 8px;">
             <input type="checkbox" name="replace_existing" value="1" />
             <span>Replace existing consoles instead of merging by name.</span>
           </label>
+          <p class="helper-text console-lock-hint" hidden>A task is running or queued: adding, importing and removing consoles is disabled until it finishes.</p>
         </form>
+      </div>
+    </section>
+
+    <section class="section stacked-section">
+      <div class="card">
+        <h2>Maintenance</h2>
+        <p class="helper-text">
+          Permanently delete every file older than {{ purge_max_age_days }} days: backups, leftover Chrome
+          profiles and temporary downloads. Settings, consoles and cookies are kept.
+        </p>
+        <button type="button" id="purge-open" class="danger">Purge Files Older Than {{ purge_max_age_days }} Days…</button>
+        <div id="purge-confirm" class="purge-confirm" hidden>
+          <p class="purge-title">Step 2 of 2 — confirm the purge</p>
+          <ul id="purge-summary" class="help-list"></ul>
+          <form method="POST" action="{{ url_for('purge_old_files') }}" id="purge-form">
+            <label for="purge-confirm-input">Type <strong>{{ purge_confirmation_word }}</strong> to confirm. This cannot be undone.</label>
+            <div class="upload-row">
+              <input type="text" id="purge-confirm-input" name="confirmation" autocomplete="off"
+                     data-expected="{{ purge_confirmation_word }}" />
+              <button type="submit" id="purge-submit" class="danger" disabled>Delete These Files</button>
+              <button type="button" id="purge-cancel" class="secondary">Cancel</button>
+            </div>
+          </form>
+        </div>
       </div>
     </section>
 

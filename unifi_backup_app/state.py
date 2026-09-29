@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from collections import deque
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import itertools
 import queue
+import threading
+import time
+from typing import Iterator
 
 console_log_buffer = deque(maxlen=2000)
 
@@ -12,6 +16,19 @@ _DEFAULT_PRIORITY = 10
 _HIGH_PRIORITY = 0
 _sequence_counter = itertools.count()
 task_queue: queue.PriorityQueue = queue.PriorityQueue()
+
+# Held by the worker while a task runs. Console edits take it without waiting, so a
+# task can never start halfway through an edit.
+task_lock = threading.Lock()
+
+# "Cancel all" bumps the generation: queued tasks stamped with an older generation are
+# skipped, and the running one stops at its next checkpoint.
+_cancel_generation = 0
+_running_generation: int | None = None
+
+
+class TaskCancelled(Exception):
+    """Raised inside a task when the user cancelled every task."""
 
 current_task_status = {
     "running": False,
@@ -35,6 +52,8 @@ def is_task_running() -> bool:
 
 
 def start_task(task_meta: dict) -> None:
+    global _running_generation
+    _running_generation = task_meta.get("generation", _cancel_generation)
     now_utc_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     current_task_status["running"] = True
     current_task_status["task_name"] = task_meta.get("task_name", "")
@@ -53,6 +72,8 @@ def update_current_task_progress(completed_items: int, step_msg: str | None = No
 
 
 def end_task() -> None:
+    global _running_generation
+    _running_generation = None
     current_task_status["running"] = False
     current_task_status["task_name"] = ""
     current_task_status["step"] = ""
@@ -78,18 +99,56 @@ def current_task_has_prefix(prefix: str) -> bool:
     return task_name.startswith(prefix) or step.startswith(prefix)
 
 
-def purge_queued_tasks_with_prefix(prefix: str) -> int:
-    removed = 0
+def is_task_cancelled(task_meta: dict) -> bool:
+    return task_meta.get("generation", _cancel_generation) != _cancel_generation
+
+
+def cancel_requested() -> bool:
+    return _running_generation is not None and _running_generation != _cancel_generation
+
+
+def raise_if_cancelled() -> None:
+    if cancel_requested():
+        raise TaskCancelled()
+
+
+def cancellable_sleep(seconds: float) -> None:
+    deadline = time.monotonic() + seconds
+    while True:
+        raise_if_cancelled()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(0.5, remaining))
+
+
+def cancel_all_tasks() -> tuple[int, bool]:
+    """Drop every queued task and flag the running one. Returns (dropped, was_running)."""
+    global _cancel_generation
     with task_queue.mutex:
-        items = list(task_queue.queue)
+        _cancel_generation += 1
+        dropped = len(task_queue.queue)
         task_queue.queue.clear()
-        for item in items:
-            task_meta = item[2]
-            if task_meta["task_name"].startswith(prefix):
-                removed += 1
-                continue
-            task_queue.queue.append(item)
-    return removed
+        # Keep Queue.join() bookkeeping right for the items removed without task_done().
+        task_queue.unfinished_tasks -= dropped
+        if task_queue.unfinished_tasks <= 0:
+            task_queue.unfinished_tasks = 0
+            task_queue.all_tasks_done.notify_all()
+    was_running = bool(current_task_status["running"])
+    if was_running:
+        current_task_status["step"] = "Cancelling..."
+    return dropped, was_running
+
+
+@contextmanager
+def hold_worker_if_idle() -> Iterator[bool]:
+    """Yield True when no task runs or waits; the worker cannot start one meanwhile."""
+    acquired = task_lock.acquire(blocking=False)
+    try:
+        yield acquired and task_queue.empty()
+    finally:
+        if acquired:
+            task_lock.release()
 
 
 def _enqueue_task(
@@ -107,6 +166,7 @@ def _enqueue_task(
         "args": args or [],
         "kwargs": kwargs or {},
         "total_items": max(1, int(total_items or 1)),
+        "generation": _cancel_generation,
     }
     task_queue.put((priority, next(_sequence_counter), task_meta))
     return True
