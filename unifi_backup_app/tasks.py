@@ -51,12 +51,12 @@ from .state import (
 UNIFI_HOME_URL = "https://unifi.ui.com/"
 _LOGIN_HOSTS = ("account.ui.com", "sso.ui.com")
 
-# UniFi backup page flow: "Download Backup" opens a dialog whose primary "Download"
-# button makes the console build the archive; the browser download only starts
-# once it is ready, which can take ~45 s.
+# UniFi backup page flow (11/2026): an inline "Download Backup" button opens a dialog
+# on the same page; its primary "Download" button makes the console build the archive.
+# The browser download only starts once it is ready, normally within 30-45 s.
 OPEN_DIALOG_TIMEOUT = 60
 CONFIRM_TIMEOUT = 30
-DOWNLOAD_START_TIMEOUT = 120
+DOWNLOAD_START_TIMEOUT = 90
 DOWNLOAD_STALL_TIMEOUT = 120
 DOWNLOAD_MAX_DURATION = 30 * 60
 _PARTIAL_DOWNLOAD_SUFFIXES = (".crdownload", ".tmp", ".part")
@@ -296,10 +296,33 @@ def manual_login_browser_logic() -> None:
 
 
 def _button_xpath(label: str, primary: bool = False) -> str:
-    xpath = f"//button[.//span[contains(@class, 'content') and normalize-space()='{label}']"
+    # Match the label wherever it sits: directly inside the <button> (the inline
+    # "Download Backup" button since 11/2026) or in a <span class="content__..."> (the
+    # dialog buttons). Hashed class suffixes and react-aria ids change on every UniFi
+    # release, so they are never used.
+    xpath = (
+        f"//button[(normalize-space(.)='{label}' or .//span[normalize-space()='{label}'])"
+    )
     if primary:
         xpath += " and contains(@class, 'primary')"
     return xpath + "]"
+
+
+_VISIBLE_BUTTON_LABELS_JS = r"""
+return Array.from(document.querySelectorAll('button'))
+  .filter(b => b.getClientRects().length > 0)
+  .map(b => (b.innerText || b.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim())
+  .filter(t => t.length > 0 && t.length <= 60);
+"""
+
+
+def _visible_button_labels(driver) -> list[str]:
+    """Labels of the buttons shown on the page, to diagnose the next UniFi UI change."""
+    try:
+        labels = driver.execute_script(_VISIBLE_BUTTON_LABELS_JS) or []
+    except Exception:
+        return []
+    return list(dict.fromkeys(labels))
 
 
 def _wait_for_button(driver, label: str, timeout: int, primary: bool = False):
@@ -323,7 +346,16 @@ def _wait_for_button(driver, label: str, timeout: int, primary: bool = False):
             ignored_exceptions=(StaleElementReferenceException,),
         ).until(_visible_button)
     except TimeoutException:
-        raise BackupError(f"button '{label}' not found after {timeout}s") from None
+        labels = _visible_button_labels(driver)
+        try:
+            url = driver.current_url
+        except Exception:
+            url = "?"
+        log_console(f"Button '{label}' not found on {url} => visible buttons: {labels}")
+        seen = ", ".join(f"'{text}'" for text in labels[:12]) or "none"
+        raise BackupError(
+            f"button '{label}' not found after {timeout}s (visible buttons: {seen})"
+        ) from None
 
 
 def _click(driver, element) -> None:
@@ -360,8 +392,9 @@ def _wait_for_download(download_dir: Path) -> Path:
             return download_dir / newest[0]
 
         now = time.monotonic()
-        if entries:
+        if entries and not download_started:
             download_started = True
+            log_console(f"Download started after {now - started_at:.0f}s.")
         if snapshot != last_snapshot:
             last_snapshot = snapshot
             last_change = now
@@ -405,8 +438,9 @@ def _backup_console_once(console: dict) -> tuple[str, str]:
             driver.get(console["backup_url"])
 
             _click(driver, _wait_for_button(driver, "Download Backup", OPEN_DIALOG_TIMEOUT))
+            log_console(f"Backup => '{name}' => 'Download Backup' clicked, waiting for the dialog...")
             _click(driver, _wait_for_button(driver, "Download", CONFIRM_TIMEOUT, primary=True))
-            log_console(f"Backup => '{name}' => waiting for the download to start...")
+            log_console(f"Backup => '{name}' => 'Download' clicked, waiting for the download to start...")
             downloaded = _wait_for_download(download_dir)
 
         new_name = _store_backup_file(name, downloaded)

@@ -120,8 +120,10 @@ https://unifi.ui.com/consoles/F4[...]5/network/default/settings/control-plane/ba
 ```
 Following this change, this app now does a full backup of the console and no longer just the network side.
 
-Backup page flow (09/2026): the app clicks **Download Backup**, then the primary **Download** button of the dialog,
-and waits for the console to prepare the archive (the browser download can take ~45 s to start).
+Backup page flow (11/2026): the app clicks the inline **Download Backup** button, then the primary **Download** button
+of the dialog it opens, and waits for the console to prepare the archive (the browser download normally starts
+within 30-45 s; the attempt fails after 90 s). Buttons are found by their label, never by the hashed CSS classes or
+generated ids. When a button is missing, the error lists the buttons visible on the page.
 
 Old urls format (no longer supported) :
 
